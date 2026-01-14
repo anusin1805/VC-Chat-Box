@@ -1,18 +1,30 @@
+import re
+
 @app.route('/chat', methods=['POST'])
 def chat():
     user_message = request.json.get('message', '').strip()
     
-    # regex to find the name/symbol after "Price of" or "Stock"
-    match = re.search(r'\b(price|stock|check|of)\b\s*([A-Za-z0-9.]{1,10})', user_message, re.IGNORECASE)
-    query = match.group(2) if match else user_message # Fallback to full message if no keywords
+    # Clean the message: extract just the ticker/name
+    # This regex looks for "Price of TSLA" or just "TSLA"
+    match = re.search(r'\b(price|stock|check|of|for)\b\s*([A-Za-z0-9.]{1,10})', user_message, re.IGNORECASE)
     
+    if match:
+        query = match.group(2)
+    else:
+        # If no keywords, just take the first word (e.g., user just typed "TSLA")
+        query = user_message.split()[0]
+
     data = get_stock_info(query)
     
     if data:
-        # Highlight if it came from your sheet or the web
-        header = "📑 **Sheet Data**" if data['source'] == "Google Sheet" else "🌐 **Live Data**"
-        response = f"{header}<br>Symbol: {data['symbol']}<br>Price: {data['price']}<br>Change: {data['change']}"
+        source_icon = "📑" if data['source'] == "Google Sheet" else "🌐"
+        bot_response = (
+            f"{source_icon} **{data['source']} Data**<br>"
+            f"Symbol: {data['symbol']}<br>"
+            f"Price: {data['price']}<br>"
+            f"Change: {data['change']}"
+        )
     else:
-        response = f"I couldn't find **{query}** in your spreadsheet or the stock market. Check the spelling?"
+        bot_response = f"I couldn't find **{query}** in the spreadsheet or the market. Try a symbol like **TSLA**."
 
-    return jsonify({"response": response})
+    return jsonify({"response": bot_response})
