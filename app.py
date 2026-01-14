@@ -2,24 +2,17 @@
 def chat():
     user_message = request.json.get('message', '').strip()
     
-    # Logic to extract the symbol (e.g., from "Price of TSLA" or "$AAPL")
+    # regex to find the name/symbol after "Price of" or "Stock"
     match = re.search(r'\b(price|stock|check|of)\b\s*([A-Za-z0-9.]{1,10})', user_message, re.IGNORECASE)
-    ticker = match.group(2).upper() if match else None
-
-    if ticker:
-        data = get_stock_info(ticker) # This function now checks BOTH sources
-        
-        if data:
-            source_tag = "🏢 **Internal Design Database**" if data['source'] == "Custom Sheet" else "🌐 **Live Exchange Data**"
-            bot_response = (
-                f"{source_tag}<br>"
-                f"**{data['symbol']}**<br>"
-                f"Price: {data['price']}<br>"
-                f"Change: {data['change']}"
-            )
-        else:
-            bot_response = f"I'm sorry, I couldn't find **{ticker}** in our catalog or the live market."
+    query = match.group(2) if match else user_message # Fallback to full message if no keywords
+    
+    data = get_stock_info(query)
+    
+    if data:
+        # Highlight if it came from your sheet or the web
+        header = "📑 **Sheet Data**" if data['source'] == "Google Sheet" else "🌐 **Live Data**"
+        response = f"{header}<br>Symbol: {data['symbol']}<br>Price: {data['price']}<br>Change: {data['change']}"
     else:
-        bot_response = "Ask me for a price! E.g., 'Price of TSLA' or 'Check AAPL'."
+        response = f"I couldn't find **{query}** in your spreadsheet or the stock market. Check the spelling?"
 
-    return jsonify({"response": bot_response})
+    return jsonify({"response": response})
