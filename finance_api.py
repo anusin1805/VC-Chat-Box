@@ -11,37 +11,39 @@ CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&
 def get_stock_info(query):
     query_clean = query.strip().upper()
     
-    # --- SOURCE 1: Try Google Sheet ---
+    # --- SOURCE 1: Try your Google Sheet ---
     try:
         response = requests.get(CSV_URL, timeout=10)
         df = pd.read_csv(io.StringIO(response.content.decode('utf-8')))
-        # Clean column names
-        df.columns = [c.strip().upper() for c in df.columns]
-
-        # Search by Symbol (TSLA) OR by Company Name (Tesla)
-        mask = (df['SYMBOL'].astype(str).str.upper() == query_clean)
-        if 'COMPANY' in df.columns:
-            mask |= (df['COMPANY'].astype(str).str.upper().str.contains(query_clean))
         
-        result = df[mask]
+        # Mapping your specific headers:
+        # "Ticker Symbol" -> used for searching
+        # "Close" -> used for price
+        # "% Change" -> used for change
+        
+        # Standardize column names for easy searching
+        df.columns = [c.strip() for c in df.columns]
 
+        # Search the 'Ticker Symbol' column
+        result = df[df['Ticker Symbol'].astype(str).str.upper() == query_clean]
+        
         if not result.empty:
             row = result.iloc[0]
             return {
                 "source": "Google Sheet",
-                "symbol": row.get('SYMBOL', query_clean),
-                "price": str(row.get('PRICE', 'N/A')),
-                "change": str(row.get('CHANGE', '0.00%'))
+                "symbol": row['Ticker Symbol'],
+                "price": f"${row['Close']:.2f}" if isinstance(row['Close'], (int, float)) else str(row['Close']),
+                "change": str(row.get('% Change', '0.00%'))
             }
     except Exception as e:
-        print(f"Sheet Error: {e}")
+        print(f"Sheet Search Error: {e}")
 
-    # --- SOURCE 2: Try Live Market (Backup) ---
+    # --- SOURCE 2: Live Market Fallback (yfinance) ---
     try:
-        # yfinance is great at handling "Tesla" or "TSLA"
         ticker = yf.Ticker(query_clean)
+        # yfinance handles names like "Tesla" better than raw CSVs
         info = ticker.fast_info
-        if info.last_price is not None and not pd.isna(info.last_price):
+        if info.last_price is not None:
             return {
                 "source": "Live Market",
                 "symbol": query_clean,
