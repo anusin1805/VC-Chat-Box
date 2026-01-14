@@ -3,54 +3,70 @@ import io
 import requests
 import yfinance as yf
 
-# Your Google Sheet Settings
-SHEET_ID = "1YGNIxeDVD0FyO0shvhL_AQ0gcM9qaXEoN8lyyXWaf_s"
-GID = "501687"
+# --- NEW SHEET CREDENTIALS ---
+# From your URL: https://docs.google.com/spreadsheets/d/11MvFhyIdRI6dxLn4jGi27Inp0iPfD-Ce/edit?gid=1760617300
+SHEET_ID = "11MvFhyIdRI6dxLn4jGi27Inp0iPfD-Ce"
+GID = "1760617300"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
 def get_stock_info(query):
-    query_clean = query.strip().upper()
+    # 1. CLEAN THE QUERY
+    # Remove $, ', ", and spaces
+    query_clean = query.replace('$', '').replace("'", "").replace('"', '').strip().upper()
     
-    # --- SOURCE 1: Try your Google Sheet ---
+    print(f"Searching for: {query_clean}") # Debug log for Render
+
+    # --- SOURCE 1: Check Google Sheet ---
     try:
         response = requests.get(CSV_URL, timeout=10)
+        response.raise_for_status()
+        
         df = pd.read_csv(io.StringIO(response.content.decode('utf-8')))
         
-        # Mapping your specific headers:
-        # "Ticker Symbol" -> used for searching
-        # "Close" -> used for price
-        # "% Change" -> used for change
-        
-        # Standardize column names for easy searching
+        # Clean column headers (strip spaces)
         df.columns = [c.strip() for c in df.columns]
 
-        # Search the 'Ticker Symbol' column
-        result = df[df['Ticker Symbol'].astype(str).str.upper() == query_clean]
+        # Search Logic:
+        # Check 'Ticker Symbol' column (e.g., TSLA)
+        # OR Check 'Stock' column (e.g., Tesla) if it exists
+        mask = (df['Ticker Symbol'].astype(str).str.upper() == query_clean)
         
+        if 'Stock' in df.columns:
+            mask |= (df['Stock'].astype(str).str.upper().str.contains(query_clean))
+        
+        result = df[mask]
+
         if not result.empty:
             row = result.iloc[0]
+            # Handle potential missing/formatted data safely
+            price_raw = row.get('Close', row.get('Price', 'N/A'))
+            change_raw = row.get('% Change', row.get('Change', '0.00%'))
+            
             return {
                 "source": "Google Sheet",
-                "symbol": row['Ticker Symbol'],
-                "price": f"${row['Close']:.2f}" if isinstance(row['Close'], (int, float)) else str(row['Close']),
-                "change": str(row.get('% Change', '0.00%'))
+                "symbol": row.get('Ticker Symbol', query_clean),
+                "price": f"${price_raw}" if str(price_raw).replace('.','').isdigit() else str(price_raw),
+                "change": str(change_raw)
             }
+            
     except Exception as e:
-        print(f"Sheet Search Error: {e}")
+        print(f"Sheet Error: {e}")
 
-    # --- SOURCE 2: Live Market Fallback (yfinance) ---
+    # --- SOURCE 2: Live Market (Fallback) ---
     try:
-        ticker = yf.Ticker(query_clean)
-        # yfinance handles names like "Tesla" better than raw CSVs
-        info = ticker.fast_info
-        if info.last_price is not None:
-            return {
-                "source": "Live Market",
-                "symbol": query_clean,
-                "price": f"${info.last_price:.2f}",
-                "change": f"{((info.last_price - info.previous_close)/info.previous_close)*100:+.2f}%"
-            }
-    except:
-        pass
+        # Only try yfinance if the query looks like a ticker (short, no spaces)
+        if len(query_clean) <= 5 and " " not in query_clean:
+            ticker = yf.Ticker(query_clean)
+            info = ticker.fast_info
+            
+            if info.last_price is not None:
+                return {
+                    "source": "Live Market",
+                    "symbol": query_clean,
+                    "price": f"${info.last_price:.2f}",
+                    "change": "Live"
+                }
+    except Exception as e:
+        print(f"Live API Error: {e}")
 
     return None
