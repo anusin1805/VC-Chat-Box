@@ -1,50 +1,25 @@
-from flask import Flask, render_template, request, jsonify
-from finance_api import get_stock_info # Import the integration module
-import re
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return render_template('chat.html')
-
 @app.route('/chat', methods=['POST'])
 def chat():
     user_message = request.json.get('message', '').strip()
     
-    if not user_message:
-        return jsonify({"response": "Please say something!"})
+    # Logic to extract the symbol (e.g., from "Price of TSLA" or "$AAPL")
+    match = re.search(r'\b(price|stock|check|of)\b\s*([A-Za-z0-9.]{1,10})', user_message, re.IGNORECASE)
+    ticker = match.group(2).upper() if match else None
 
-    # --- INTEGRATION LOGIC ---
-    # Check if the user is asking for a stock price
-    # Patterns: "price of AAPL", "stock TSLA", "check MSFT"
-    stock_pattern = re.search(r'\b(price|stock|check|value)\b.*\b([A-Z]{1,5})\b', user_message, re.IGNORECASE)
-    
-    # Also check for direct symbols like "$AAPL" or just "GOOG" if it looks like a ticker
-    direct_symbol = re.search(r'\$([A-Z]{1,5})', user_message)
-
-    ticker = None
-    if stock_pattern:
-        ticker = stock_pattern.group(2) # Extract the symbol (e.g., AAPL)
-    elif direct_symbol:
-        ticker = direct_symbol.group(1)
-
-    # If a ticker was found, call the Finance API
     if ticker:
-        data = get_stock_info(ticker)
+        data = get_stock_info(ticker) # This function now checks BOTH sources
+        
         if data:
+            source_tag = "🏢 **Internal Design Database**" if data['source'] == "Custom Sheet" else "🌐 **Live Exchange Data**"
             bot_response = (
-                f"📈 **Market Data for {data['symbol']}**<br>"
-                f"Current Price: {data['price']}<br>"
-                f"Day Change: {data['change']}"
+                f"{source_tag}<br>"
+                f"**{data['symbol']}**<br>"
+                f"Price: {data['price']}<br>"
+                f"Change: {data['change']}"
             )
         else:
-            bot_response = f"I tried to check **{ticker}**, but I couldn't find data for that symbol."
+            bot_response = f"I'm sorry, I couldn't find **{ticker}** in our catalog or the live market."
     else:
-        # Fallback for non-financial queries (General Chat Logic)
-        bot_response = "I am the VC Finance Bot. Ask me about stock prices (e.g., 'Price of AAPL' or '$TSLA')."
+        bot_response = "Ask me for a price! E.g., 'Price of TSLA' or 'Check AAPL'."
 
     return jsonify({"response": bot_response})
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
