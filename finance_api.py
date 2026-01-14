@@ -9,43 +9,46 @@ GID = "501687"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
 def get_stock_info(query):
-    query = query.strip().upper()
+    query_clean = query.strip().upper()
     
-    # --- SOURCE 1: Try Google Sheet (Custom Data) ---
+    # --- SOURCE 1: Try Google Sheet ---
     try:
         response = requests.get(CSV_URL, timeout=10)
         df = pd.read_csv(io.StringIO(response.content.decode('utf-8')))
+        # Clean column names
         df.columns = [c.strip().upper() for c in df.columns]
 
-        # Search for symbol in your sheet
-        sheet_result = df[df['SYMBOL'] == query]
-        if not sheet_result.empty:
-            row = sheet_result.iloc[0]
+        # Search by Symbol (TSLA) OR by Company Name (Tesla)
+        mask = (df['SYMBOL'].astype(str).str.upper() == query_clean)
+        if 'COMPANY' in df.columns:
+            mask |= (df['COMPANY'].astype(str).str.upper().str.contains(query_clean))
+        
+        result = df[mask]
+
+        if not result.empty:
+            row = result.iloc[0]
             return {
-                "source": "Custom Sheet",
-                "symbol": row.get('SYMBOL', query),
+                "source": "Google Sheet",
+                "symbol": row.get('SYMBOL', query_clean),
                 "price": str(row.get('PRICE', 'N/A')),
                 "change": str(row.get('CHANGE', '0.00%'))
             }
     except Exception as e:
-        print(f"Sheet Access Error: {e}")
+        print(f"Sheet Error: {e}")
 
-    # --- SOURCE 2: Fallback to Live Market (yfinance) ---
+    # --- SOURCE 2: Try Live Market (Backup) ---
     try:
-        stock = yf.Ticker(query)
-        info = stock.fast_info
-        if info.last_price is not None:
-            price = info.last_price
-            change_val = price - info.previous_close
-            change_pct = (change_val / info.previous_close) * 100
-            
+        # yfinance is great at handling "Tesla" or "TSLA"
+        ticker = yf.Ticker(query_clean)
+        info = ticker.fast_info
+        if info.last_price is not None and not pd.isna(info.last_price):
             return {
                 "source": "Live Market",
-                "symbol": query,
-                "price": f"${price:,.2f}",
-                "change": f"{change_pct:+.2f}%"
+                "symbol": query_clean,
+                "price": f"${info.last_price:.2f}",
+                "change": f"{((info.last_price - info.previous_close)/info.previous_close)*100:+.2f}%"
             }
-    except Exception as e:
-        print(f"Live Market Error: {e}")
+    except:
+        pass
 
-    return None # Not found in either source
+    return None
