@@ -9,6 +9,18 @@ SHEET_ID = "11MvFhyIdRI6dxLn4jGi27Inp0iPfD-Ce"
 GID = "1760617300"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
+# In finance_api.py, inside get_stock_info:
+
+# 1. Force headers to lowercase and strip spaces to avoid mismatches
+df.columns = [c.strip().lower() for c in df.columns]
+
+# 2. Find the column that looks like 'ticker' or 'symbol'
+ticker_col = next((c for c in df.columns if 'ticker' in c or 'symbol' in c), None)
+
+if ticker_col:
+    # Match against the cleaned query
+    result = df[df[ticker_col].astype(str).str.upper() == query_clean]
+
 def get_stock_info(query):
     # 1. CLEAN THE QUERY
     # Remove $, ', ", and spaces
