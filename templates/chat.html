@@ -74,6 +74,27 @@
         function handleEnter(e) {
             if (e.key === 'Enter') sendMessage();
         }
+
+        // Add this to your chat.html inside a <script> tag
+async function sendMessage() {
+    const input = document.getElementById('user-input');
+    const message = input.value;
+    
+    // Add the user's message to the chat UI immediately
+    appendMessage("User", message);
+
+    const response = await fetch('/chat', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json', // REQUIRED for request.json
+        },
+        body: JSON.stringify({ message: message }) // Matches 'message' in app.py
+    });
+
+    const data = await response.json();
+    appendMessage("Bot", data.response);
+    input.value = ''; // Clear input
+}
     </script>
 </body>
 </html>
