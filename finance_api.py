@@ -10,7 +10,14 @@ GID = "1760617300"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
 # In finance_api.py, inside get_stock_info:
-
+def get_stock_info(query):
+    try:
+        # 1. Fetch the data from your Google Sheet URL
+        response = requests.get(CSV_URL)
+        response.raise_for_status() # Ensures the request didn't fail
+        
+        # 2. DEFINE 'df' by parsing the downloaded text into a DataFrame
+        df = pd.read_csv(io.StringIO(response.text))
 # 1. Force headers to lowercase and strip spaces to avoid mismatches
 df.columns = [c.strip().lower() for c in df.columns]
 
