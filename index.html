@@ -174,6 +174,20 @@
                 sendMessage();
             }
         }
+
+        fetch("https://<YOUR-RENDER-APP-NAME>.onrender.com/chat", {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ message: userInputText })
+})
+.then(res => res.json())
+.then(data => {
+    console.log("Bot Response:", data.response);
+})
+.catch(err => console.error("API Error:", err));
+
     </script>
 </body>
 </html>
