@@ -1,59 +1,179 @@
-<script>
-    // Standard function to add bubbles to the chat window
-    function addMessageToUI(text, className, isHTML = false) {
-        const chatBox = document.getElementById('chat-box');
-        const div = document.createElement('div');
-        div.className = `message ${className}`;
-        
-        if (isHTML) {
-            div.innerHTML = text; // Allows the bolding/icons from the backend
-        } else {
-            div.textContent = text;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fin.India Holdings MF Stock Ribbon & Chat</title>
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-        
-        chatBox.appendChild(div);
-        
-        // Auto-scroll to the bottom
-        chatBox.scrollTop = chatBox.scrollHeight;
-    }
 
-    async function sendMessage() {
-        const inputField = document.getElementById('user-input');
-        const text = inputField.value.trim();
-
-        if (!text) return;
-
-        // 1. Show user message in UI immediately
-        addMessageToUI(text, 'user-msg');
-        inputField.value = ''; // Clear the input box
-
-        // 2. Send the JSON data to your Render backend URL
-        try {
-            const response = await fetch('https://vc-chat-box-1.onrender.com/chat', {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json' 
-                },
-                body: JSON.stringify({ message: text })
-            });
-
-            if (!response.ok) throw new Error('Server issues');
-
-            const data = await response.json();
-
-            // 3. Show the Bot's response (supports HTML for symbols/icons)
-            addMessageToUI(data.response, 'bot-msg', true);
-
-        } catch (error) {
-            console.error("Fetch Error:", error);
-            addMessageToUI("⚠️ Connection error. Please try again.", 'bot-msg');
+        #stockRibbon {
+            width: 100%;
+            max-width: 600px;
+            background: #1e293b;
+            color: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-around;
+            font-weight: bold;
         }
-    }
 
-    // Allows users to press 'Enter' instead of clicking 'Send'
-    function handleEnter(e) {
-        if (e.key === 'Enter') {
-            sendMessage();
+        .chat-container {
+            width: 100%;
+            max-width: 600px;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            height: 500px;
+            overflow: hidden;
         }
-    }
-</script>
+
+        #chat-box {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .message {
+            max-width: 75%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .user-msg {
+            background-color: #007bff;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .bot-msg {
+            background-color: #e9ecef;
+            color: #333;
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+
+        .input-area {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #ddd;
+            background: #fff;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            outline: none;
+        }
+
+        button {
+            margin-left: 8px;
+            padding: 10px 18px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Stock Ribbon -->
+    <div id="stockRibbon">
+        <span>AAPL: $185.00</span>
+        <span>GOOGL: $140.50</span>
+        <span>MSFT: $400.20</span>
+        <span>AMZN: $175.10</span>
+    </div>
+
+    <!-- Chat Box UI -->
+    <div class="chat-container">
+        <div id="chat-box">
+            <div class="message bot-msg">Hello! How can I help you with stock info today?</div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="user-input" placeholder="Type a message or stock ticker..." onkeypress="handleEnter(event)">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        function addMessageToUI(text, className, isHTML = false) {
+            const chatBox = document.getElementById('chat-box');
+            const div = document.createElement('div');
+            div.className = `message ${className}`;
+            
+            if (isHTML) {
+                div.innerHTML = text;
+            } else {
+                div.textContent = text;
+            }
+            
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const inputField = document.getElementById('user-input');
+            const text = inputField.value.trim();
+
+            if (!text) return;
+
+            addMessageToUI(text, 'user-msg');
+            inputField.value = '';
+
+            try {
+                const response = await fetch('https://vc-chat-box-1.onrender.com/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json' 
+                    },
+                    body: JSON.stringify({ message: text })
+                });
+
+                if (!response.ok) throw new Error('Server issues');
+
+                const data = await response.json();
+                addMessageToUI(data.response, 'bot-msg', true);
+
+            } catch (error) {
+                console.error("Fetch Error:", error);
+                addMessageToUI("⚠️ Connection error. Please try again.", 'bot-msg');
+            }
+        }
+
+        function handleEnter(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        }
+    </script>
+</body>
+</html>
