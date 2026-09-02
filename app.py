@@ -1,10 +1,13 @@
 from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS  # <--- IMPORT THIS
 from finance_api import get_stock_info
-
 from openai import OpenAI
-
 import os
 import json
+
+app = Flask(__name__)
+CORS(app)  # <--- ENABLE CORS FOR ALL ROUTES
+
 
 
 # ============================================================
