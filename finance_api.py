@@ -4,34 +4,17 @@ import requests
 import yfinance as yf
 
 # --- NEW SHEET CREDENTIALS ---
-# From your URL: https://docs.google.com/spreadsheets/d/11MvFhyIdRI6dxLn4jGi27Inp0iPfD-Ce/edit?gid=1760617300
 SHEET_ID = "11MvFhyIdRI6dxLn4jGi27Inp0iPfD-Ce"
 GID = "1760617300"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
-# In finance_api.py, inside get_stock_info:
 def get_stock_info(query):
-    try:
-        # 1. Fetch the data from your Google Sheet URL
-        response = requests.get(CSV_URL)
-        response.raise_for_status() # Ensures the request didn't fail
-        
-        # 2. DEFINE 'df' by parsing the downloaded text into a DataFrame
-        df = pd.read_csv(io.StringIO(response.text))
-# 1. Force headers to lowercase and strip spaces to avoid mismatches
-df.columns = [c.strip().lower() for c in df.columns]
+    if not query:
+        return None
 
-# 2. Find the column that looks like 'ticker' or 'symbol'
-ticker_col = next((c for c in df.columns if 'ticker' in c or 'symbol' in c), None)
-
-if ticker_col:
-    # Match against the cleaned query
-    result = df[df[ticker_col].astype(str).str.upper() == query_clean]
-
-def get_stock_info(query):
     # 1. CLEAN THE QUERY
     # Remove $, ', ", and spaces
-    query_clean = query.replace('$', '').replace("'", "").replace('"', '').strip().upper()
+    query_clean = str(query).replace('$', '').replace("'", "").replace('"', '').strip().upper()
     
     print(f"Searching for: {query_clean}") # Debug log for Render
 
@@ -48,10 +31,13 @@ def get_stock_info(query):
         # Search Logic:
         # Check 'Ticker Symbol' column (e.g., TSLA)
         # OR Check 'Stock' column (e.g., Tesla) if it exists
-        mask = (df['Ticker Symbol'].astype(str).str.upper() == query_clean)
+        mask = pd.Series(False, index=df.index)
+        
+        if 'Ticker Symbol' in df.columns:
+            mask |= (df['Ticker Symbol'].astype(str).str.upper() == query_clean)
         
         if 'Stock' in df.columns:
-            mask |= (df['Stock'].astype(str).str.upper().str.contains(query_clean))
+            mask |= (df['Stock'].astype(str).str.upper().str.contains(query_clean, regex=False))
         
         result = df[mask]
 
@@ -64,7 +50,7 @@ def get_stock_info(query):
             return {
                 "source": "Google Sheet",
                 "symbol": row.get('Ticker Symbol', query_clean),
-                "price": f"${price_raw}" if str(price_raw).replace('.','').isdigit() else str(price_raw),
+                "price": f"${price_raw}" if str(price_raw).replace('.', '', 1).isdigit() else str(price_raw),
                 "change": str(change_raw)
             }
             
@@ -78,7 +64,7 @@ def get_stock_info(query):
             ticker = yf.Ticker(query_clean)
             info = ticker.fast_info
             
-            if info.last_price is not None:
+            if hasattr(info, 'last_price') and info.last_price is not None:
                 return {
                     "source": "Live Market",
                     "symbol": query_clean,
