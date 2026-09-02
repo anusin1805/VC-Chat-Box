@@ -1,10 +1,14 @@
 from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
 from finance_api import get_stock_info
 from openai import OpenAI
 import os
 import json
 
 app = Flask(__name__)
+
+# ENABLE CORS FOR ALL ORIGINS (Allows requests from GitHub Pages)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Initialize OpenAI Client
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -37,10 +41,8 @@ IMPORTANT:
 When the user asks about a specific stock, ticker, company, price, valuation or market data, use the F11 stock-data tool instead of guessing.
 Never invent financial numbers.
 If current data is unavailable, clearly state that.
-Do not claim that you executed a trade or independently place orders.
 """
 
-# Fixed OpenAI Tools Schema (Wrapped inside "function")
 tools = [
     {
         "type": "function",
@@ -77,22 +79,32 @@ def execute_tool(name, arguments):
 def home():
     return render_template("chat.html")
 
-@app.route("/chat", methods=["POST"])
+@app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
+    # Handle CORS Preflight OPTIONS requests
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
     try:
-        data = request.get_json()
-        user_message = data.get("message", "").strip()
+        data = request.get_json(silent=True) or {}
+        
+        # Safely capture message from varying JSON payload structures
+        user_message = (
+            data.get("message") or 
+            data.get("text") or 
+            data.get("prompt") or 
+            data.get("query") or 
+            ""
+        ).strip()
 
         if not user_message:
-            return jsonify({"response": "Please enter a question."})
+            return jsonify({"response": "Please enter a valid stock query."})
 
-        # Build initial message thread
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_message}
         ]
 
-        # Call OpenAI Chat Completions
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
@@ -102,9 +114,8 @@ def chat():
 
         response_message = response.choices[0].message
 
-        # Handle tool call requests
         if response_message.tool_calls:
-            messages.append(response_message)  # Append assistant request to thread
+            messages.append(response_message)
 
             for tool_call in response_message.tool_calls:
                 try:
@@ -114,14 +125,12 @@ def chat():
 
                 tool_result = execute_tool(tool_call.function.name, arguments)
 
-                # Append tool result message
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": json.dumps(tool_result)
                 })
 
-            # Send complete thread back to model for final answer
             second_response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages
@@ -140,3 +149,4 @@ def chat():
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
