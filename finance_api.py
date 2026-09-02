@@ -1,6 +1,7 @@
 import pandas as pd
 import io
 import requests
+import re
 import yfinance as yf
 from openai import OpenAI
 import os
@@ -9,68 +10,81 @@ SHEET_ID = "11MvFhyIdRI6dxLn4jGi27Inp0iPfD-Ce"
 GID = "1760617300"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
-# Pre-initialize OpenAI client if key exists
 api_key = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key) if api_key else None
 
-def get_stock_info(query):
-    if not query:
-        return None
+def extract_symbol(user_input):
+    """
+    Cleans user input to reliably extract the ticker symbol without breaking on 'of' or '.NS'
+    """
+    if not user_input:
+        return ""
+    
+    # Strip conversational prefixes
+    cleaned = re.sub(r'^(price\s+of\s+|price\s+|check\s+|show\s+|what\s+is\s+)', '', user_input, flags=re.IGNORECASE).strip()
+    # Remove clutter characters
+    cleaned = re.sub(r'[\$"'']', '', cleaned).strip()
+    return cleaned
 
-    query_clean = str(query).upper().replace('$', '').replace("'", "").replace('"', '').strip()
+def get_stock_info(user_input):
+    ticker_query = extract_symbol(user_input)
     
-    # Strip suffixes so "RELIANCE.NS" matches "RELIANCE" in your Google Sheet
-    sheet_query = query_clean.replace('.NS', '').replace('.BO', '')
-    
+    if not ticker_query:
+        return "Please enter a valid stock ticker or company name."
+
+    # Normalized query for matching
+    query_upper = ticker_query.upper()
+    sheet_query = query_upper.replace('.NS', '').replace('.BO', '')
+
     # ----------------------------------------------------
-    # 1. TRY GOOGLE SHEET SEARCH (Fuzzy Match across columns)
+    # 1. GOOGLE SHEET LOOKUP
     # ----------------------------------------------------
     try:
-        # INCREASED TIMEOUT: Render free tier requires more time for external downloads
         response = requests.get(CSV_URL, timeout=15)
-        
         if response.status_code == 200:
             df = pd.read_csv(io.StringIO(response.content.decode('utf-8')))
             
-            # Clean hidden spaces from column headers
+            # Clean and normalize column names (remove hidden spaces & lowercase)
             df.columns = df.columns.str.strip()
             
-            # Use regex=False to prevent punctuation from breaking the search
+            # Partial/Fuzzy match across all columns
             mask = df.apply(lambda row: row.astype(str).str.contains(sheet_query, case=False, regex=False, na=False).any(), axis=1)
             result = df[mask]
 
             if not result.empty:
                 row = result.iloc[0].to_dict()
                 
-                # Fetch key values with fallback logic
-                symbol = row.get('Ticker Symbol', row.get('Ticker', row.get('Symbol', sheet_query)))
-                price = row.get('Close', row.get('Price', row.get('NAV', 'N/A')))
-                change = row.get('% Change', row.get('Change', 'N/A'))
-                
+                # Dynamic column name lookup to prevent "Check CSV column headers" errors
+                def find_val(keys, default='N/A'):
+                    for k in keys:
+                        for col in row.keys():
+                            if k.lower() == col.lower():
+                                return row[col]
+                    return default
+
+                symbol = find_val(['Ticker Symbol', 'Ticker', 'Symbol', 'Name'], sheet_query)
+                price = find_val(['Close', 'Price', 'NAV', 'LTP', 'Last Price'])
+                change = find_val(['% Change', 'Change', 'Chg%'])
+
                 return f"<b>{symbol}</b> (Google Sheet)<br>Price: <b>₹{price}</b> | Change: {change}"
-    except requests.exceptions.Timeout:
-        print("Sheet Error: Timed out waiting for Google Sheets.")
     except Exception as e:
-        print(f"Sheet Error: {e}")
+        print(f"Sheet Search Error: {e}")
 
     # ----------------------------------------------------
-    # 2. TRY YAHOO FINANCE (Supports US & Indian Tickers)
+    # 2. YAHOO FINANCE LOOKUP (Live Market)
     # ----------------------------------------------------
     ticker_candidates = [
-        query_clean,
-        f"{query_clean}.NS", 
-        f"{query_clean}.BO"   
+        query_upper,
+        f"{sheet_query}.NS",  # NSE India fallback
+        f"{sheet_query}.BO"   # BSE India fallback
     ]
 
     for ticker_symbol in ticker_candidates:
         try:
-            # Spoof user-agent to bypass Yahoo's block on Render IPs
             session = requests.Session()
             session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
             
             ticker = yf.Ticker(ticker_symbol, session=session)
-            
-            # Use history instead of fast_info for better cloud reliability
             hist = ticker.history(period="1d")
             
             if not hist.empty:
@@ -78,26 +92,24 @@ def get_stock_info(query):
                 currency = ticker.info.get('currency', 'USD')
                 curr_symbol = "₹" if currency == "INR" else "$"
                 return f"<b>{ticker_symbol}</b> (Live Market)<br>Price: <b>{curr_symbol}{price:.2f}</b>"
-        except Exception as e:
-            print(f"yfinance error for {ticker_symbol}: {e}")
+        except Exception:
             continue
 
     # ----------------------------------------------------
-    # 3. FALLBACK TO OPENAI AI RESPONSE
+    # 3. OPENAI AI FALLBACK
     # ----------------------------------------------------
     if client:
         try:
             completion = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a financial assistant. Give concise details about the requested stock/company."},
-                    {"role": "user", "content": f"Provide current financial status, ticker details, and company profile for: {query_clean}"}
+                    {"role": "system", "content": "You are a finance assistant. Provide stock information concisely."},
+                    {"role": "user", "content": f"Provide stock info for: {ticker_query}"}
                 ],
                 max_tokens=150
             )
             return completion.choices[0].message.content
         except Exception as e:
-            print(f"OpenAI Fallback Error: {e}")
+            print(f"OpenAI Error: {e}")
 
-    return f"Could not find stock info for <b>{query_clean}</b>. Try entering an explicit ticker like <b>RELIANCE.NS</b> or <b>TSLA</b>."
-
+    return f"Could not find stock data for <b>{ticker_query}</b>. Try searching using exact tickers like <b>RELIANCE.NS</b> or <b>TSLA</b>."
