@@ -4,3 +4,4 @@ requests==2.31.0
 pandas==2.2.0
 gunicorn==21.2.0
 openai
+flask-cors
