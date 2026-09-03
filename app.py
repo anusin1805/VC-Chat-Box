@@ -1,152 +1,449 @@
-from flask import Flask, render_template, request, jsonify
-from flask_cors import CORS
-from finance_api import get_stock_info
-from openai import OpenAI
 import os
 import json
+import logging
+from datetime import datetime, timezone
+
+from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
+from openai import OpenAI
+
+from finance_api import get_stock_info
+
+
+# ---------------------------------------------------------
+# APPLICATION
+# ---------------------------------------------------------
 
 app = Flask(__name__)
 
-# ENABLE CORS FOR ALL ORIGINS (Allows requests from GitHub Pages)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": "*",
+            "methods": ["GET", "POST", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+        }
+    },
+)
 
-# Initialize OpenAI Client
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+# ---------------------------------------------------------
+# LOGGING
+# ---------------------------------------------------------
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("f11-ai")
+
+
+# ---------------------------------------------------------
+# OPENAI
+# ---------------------------------------------------------
+
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    logger.warning("OPENAI_API_KEY is not configured")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+
+MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+
+
+# ---------------------------------------------------------
+# SYSTEM PROMPT
+# ---------------------------------------------------------
 
 SYSTEM_PROMPT = """
-You are F11 AI, an intelligent financial and investment analysis assistant.
-You are part of the F11 financial application.
+You are F11 AI, the financial intelligence assistant inside the F11
+investment application.
 
-Your job is to help users understand:
-- Stocks
-- Market prices
-- Company fundamentals
-- Portfolio information
-- Investment concepts
-- Market trends
-- Risk
-- Valuation
-- Financial metrics
+You help users understand:
 
-You should communicate like a sophisticated venture-capital and investment research analyst.
+- Indian stocks
+- US stocks
+- stock prices
+- company fundamentals
+- valuation
+- P/E
+- market capitalization
+- beta
+- volatility
+- 52-week high and low
+- portfolio information
+- investment concepts
+- market trends
+- investment risk
 
-Your responses should be:
-1. Clear
-2. Analytical
-3. Concise
-4. Data-driven
-5. Easy for a non-expert investor to understand
+IMPORTANT FINANCIAL DATA RULES:
 
-IMPORTANT:
-When the user asks about a specific stock, ticker, company, price, valuation or market data, use the F11 stock-data tool instead of guessing.
-Never invent financial numbers.
-If current data is unavailable, clearly state that.
+1. NEVER invent a stock price.
+2. NEVER invent market capitalization.
+3. NEVER invent P/E, beta, volatility or other financial metrics.
+4. When the user asks about a specific stock/company/ticker, ALWAYS
+   use the get_stock_info tool.
+5. If the tool cannot find the stock, clearly say that the F11 data
+   source could not identify it.
+6. Do not substitute a guessed ticker.
+7. Distinguish between current/live data and historical data.
+8. Always mention the data timestamp/source when available.
+9. Do not guarantee investment returns.
+10. Do not present investment advice as certainty.
+
+Your answer should be:
+
+- clear
+- analytical
+- concise
+- data-driven
+- understandable to a non-expert investor
+
+For stock questions, structure the response approximately as:
+
+Company / Ticker
+Current Price
+Market Capitalization
+P/E
+52-week range
+Other available metrics
+
+Then provide a short interpretation.
+
+If a metric is unavailable, say "Not available" rather than guessing.
 """
 
-tools = [
+
+# ---------------------------------------------------------
+# TOOL DEFINITION
+# ---------------------------------------------------------
+
+TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "get_stock_info",
-            "description": (
-                "Retrieve stock information from the F11 Google Sheet and live Yahoo Finance data. "
-                "Use this whenever the user asks about a specific stock, ticker or company."
-            ),
+            "description": """
+Retrieve verified F11 stock information.
+
+Use this function whenever the user asks about:
+- a stock
+- a ticker
+- a company
+- current price
+- market price
+- market capitalization
+- P/E
+- beta
+- volatility
+- 52-week high
+- 52-week low
+- stock fundamentals
+- stock valuation
+
+Never answer these questions using model knowledge alone.
+""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Stock ticker or company name. Examples: AAPL, TSLA, RELIANCE"
+                        "description": (
+                            "Ticker symbol or company name, "
+                            "for example RELIANCE, TCS, INFY, AAPL"
+                        ),
                     }
                 },
-                "required": ["query"]
-            }
-        }
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
     }
 ]
 
+
+# ---------------------------------------------------------
+# TOOL EXECUTION
+# ---------------------------------------------------------
+
 def execute_tool(name, arguments):
-    if name == "get_stock_info":
-        query = arguments.get("query", "")
-        result = get_stock_info(query)
-        if result is None:
-            return {"found": False, "query": query}
-        return {"found": True, "data": result}
-    return {"error": "Unknown tool"}
 
-@app.route("/")
-def home():
-    return render_template("chat.html")
+    if name != "get_stock_info":
+        return {
+            "success": False,
+            "error": "Unknown tool"
+        }
 
-@app.route("/chat", methods=["POST", "OPTIONS"])
-def chat():
-    # Handle CORS Preflight OPTIONS requests
-    if request.method == "OPTIONS":
-        return jsonify({"status": "ok"}), 200
+    query = arguments.get("query", "").strip()
+
+    if not query:
+        return {
+            "success": False,
+            "error": "Empty stock query"
+        }
 
     try:
-        data = request.get_json(silent=True) or {}
-        
-        # Safely capture message from varying JSON payload structures
+
+        result = get_stock_info(query)
+
+        if result is None:
+
+            return {
+                "success": False,
+                "query": query,
+                "error": "Stock not found"
+            }
+
+        return {
+            "success": True,
+            "query": query,
+            "data": result,
+            "retrieved_at": datetime.now(
+                timezone.utc
+            ).isoformat()
+        }
+
+    except Exception as exc:
+
+        logger.exception(
+            "Stock API error for query=%s",
+            query
+        )
+
+        return {
+            "success": False,
+            "query": query,
+            "error": "Market data provider unavailable"
+        }
+
+
+# ---------------------------------------------------------
+# HEALTH CHECK
+# ---------------------------------------------------------
+
+@app.route("/health", methods=["GET"])
+def health():
+
+    return jsonify({
+        "status": "ok",
+        "service": "F11 AI",
+        "model": MODEL,
+        "timestamp": datetime.now(
+            timezone.utc
+        ).isoformat()
+    })
+
+
+# ---------------------------------------------------------
+# FRONTEND
+# ---------------------------------------------------------
+
+@app.route("/", methods=["GET"])
+def home():
+
+    return render_template("chat.html")
+
+
+# ---------------------------------------------------------
+# CHAT API
+# ---------------------------------------------------------
+
+@app.route("/api/chat", methods=["POST", "OPTIONS"])
+def chat():
+
+    if request.method == "OPTIONS":
+        return "", 204
+
+    try:
+
+        payload = request.get_json(silent=True) or {}
+
         user_message = (
-            data.get("message") or 
-            data.get("text") or 
-            data.get("prompt") or 
-            data.get("query") or 
-            ""
+            payload.get("message")
+            or payload.get("text")
+            or payload.get("prompt")
+            or payload.get("query")
+            or ""
         ).strip()
 
         if not user_message:
-            return jsonify({"response": "Please enter a valid stock query."})
+
+            return jsonify({
+                "success": False,
+                "response": "Please enter a question."
+            }), 400
+
+
+        # -------------------------------------------------
+        # FIRST MODEL CALL
+        # -------------------------------------------------
 
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT
+            },
+            {
+                "role": "user",
+                "content": user_message
+            }
         ]
 
+
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+
+            model=MODEL,
+
             messages=messages,
-            tools=tools,
-            tool_choice="auto"
+
+            tools=TOOLS,
+
+            tool_choice="auto",
+
+            temperature=0.1
         )
 
-        response_message = response.choices[0].message
 
-        if response_message.tool_calls:
-            messages.append(response_message)
+        assistant_message = response.choices[0].message
 
-            for tool_call in response_message.tool_calls:
+
+        # -------------------------------------------------
+        # TOOL CALL
+        # -------------------------------------------------
+
+        if assistant_message.tool_calls:
+
+            messages.append(assistant_message)
+
+
+            for tool_call in assistant_message.tool_calls:
+
                 try:
-                    arguments = json.loads(tool_call.function.arguments)
+
+                    arguments = json.loads(
+                        tool_call.function.arguments
+                    )
+
                 except Exception:
+
                     arguments = {}
 
-                tool_result = execute_tool(tool_call.function.name, arguments)
+
+                tool_result = execute_tool(
+                    tool_call.function.name,
+                    arguments
+                )
+
 
                 messages.append({
+
                     "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": json.dumps(tool_result)
+
+                    "tool_call_id":
+                        tool_call.id,
+
+                    "content":
+                        json.dumps(
+                            tool_result,
+                            default=str
+                        )
                 })
 
-            second_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages
+
+            # -------------------------------------------------
+            # SECOND MODEL CALL
+            # -------------------------------------------------
+
+            final_response = client.chat.completions.create(
+
+                model=MODEL,
+
+                messages=messages,
+
+                temperature=0.1
             )
-            answer = second_response.choices[0].message.content
-        else:
-            answer = response_message.content
 
-        return jsonify({"response": answer})
 
-    except Exception as e:
-        print(f"[F11 AI ERROR] {e}")
+            answer = (
+                final_response
+                .choices[0]
+                .message
+                .content
+            )
+
+
+            return jsonify({
+
+                "success": True,
+
+                "response": answer,
+
+                "tool_used": True,
+
+                "timestamp":
+                    datetime.now(
+                        timezone.utc
+                    ).isoformat()
+            })
+
+
+        # -------------------------------------------------
+        # NORMAL QUESTION
+        # -------------------------------------------------
+
+        answer = assistant_message.content or ""
+
         return jsonify({
-            "response": "F11 AI is temporarily unable to process your request. Please try again."
+
+            "success": True,
+
+            "response": answer,
+
+            "tool_used": False,
+
+            "timestamp":
+                datetime.now(
+                    timezone.utc
+                ).isoformat()
+        })
+
+
+    except Exception as exc:
+
+        logger.exception(
+            "F11 AI request failed"
+        )
+
+        return jsonify({
+
+            "success": False,
+
+            "response": (
+                "F11 AI is temporarily unavailable. "
+                "Please try again."
+            ),
+
+            "error": str(exc)
+            if app.debug else None
+
         }), 500
 
+
+# ---------------------------------------------------------
+# PRODUCTION ENTRY POINT
+# ---------------------------------------------------------
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+
+    port = int(
+        os.environ.get(
+            "PORT",
+            "10000"
+        )
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )
 
