@@ -16,9 +16,7 @@ from finance_api import get_stock_info
 
 app = Flask(__name__)
 
-CORS(
-    app,
-    )
+CORS(app)
 # ---------------------------------------------------------
 # LOGGING
 # ---------------------------------------------------------
