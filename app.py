@@ -9,7 +9,6 @@ from google.genai import types
 
 from finance_api import get_stock_info
 
-# Change this line in app.py:
 app = Flask(__name__, template_folder='.')
 CORS(app, resources={r"/*": {"origins": "*"}})
 
