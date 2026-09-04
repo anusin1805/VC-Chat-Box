@@ -3,5 +3,6 @@ yfinance==0.2.36
 requests==2.31.0
 pandas==2.2.0
 gunicorn==21.2.0
-openai
-flask-cors
+google-genai>=0.1.1
+openai>=1.12.0
+flask-cors>=4.0.0
