@@ -188,8 +188,6 @@ const send =
         "send"
     );
 
-
- div.innerHTML = text;
       
       const chat =
     document.getElementById(
@@ -218,6 +216,8 @@ function addMessage(
 
     div.textContent =
         text;
+
+    div.innerHTML = text;
 
     chat.appendChild(
         div
