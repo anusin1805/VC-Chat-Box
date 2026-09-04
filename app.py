@@ -26,7 +26,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # ---------------------------------------------------------
-# SYSTEM PROMPT
+# SYSTEM PROMPT & TOOLS
 # ---------------------------------------------------------
 SYSTEM_PROMPT = """
 You are F11 AI, the financial intelligence assistant inside the F11 investment application.
@@ -40,8 +40,12 @@ IMPORTANT FINANCIAL DATA RULES:
 4. Do not guarantee investment returns or present advice as certainty.
 """
 
+tool_functions = {
+    "get_stock_info": get_stock_info
+}
+
 # ---------------------------------------------------------
-# HEALTH CHECK
+# HEALTH CHECK & FRONTEND
 # ---------------------------------------------------------
 @app.route("/health", methods=["GET"])
 def health():
@@ -52,9 +56,6 @@ def health():
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
 
-# ---------------------------------------------------------
-# FRONTEND
-# ---------------------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
     return render_template("index.html")
@@ -62,11 +63,6 @@ def home():
 # ---------------------------------------------------------
 # CHAT API ROUTE
 # ---------------------------------------------------------
-# Map available functions
-tool_functions = {
-    "get_stock_info": get_stock_info
-}
-
 @app.route("/api/chat", methods=["POST", "OPTIONS"])
 def chat():
     if request.method == "OPTIONS":
@@ -94,20 +90,20 @@ def chat():
                 "response": "Please enter a valid question."
             }), 400
 
-        # Initial call to Gemini
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             tools=[get_stock_info],
             temperature=0.1
         )
 
+        # Initial call to Gemini
         response = gemini_client.models.generate_content(
             model='gemini-2.5-flash',
             contents=user_message,
             config=config
         )
 
-        # Check if the model requested a function call
+        # Handle Function Calling Loop
         if response.function_calls:
             messages = [
                 types.Content(role="user", parts=[types.Part.from_text(text=user_message)]),
@@ -116,13 +112,15 @@ def chat():
 
             for call in response.function_calls:
                 fn_name = call.name
-                fn_args = call.args
+                fn_args = dict(call.args) if call.args else {}
 
                 if fn_name in tool_functions:
-                    # Execute tool locally
-                    tool_result = tool_functions[fn_name](**fn_args)
+                    try:
+                        tool_result = tool_functions[fn_name](**fn_args)
+                    except Exception as fn_err:
+                        logger.error(f"Error executing function {fn_name}: {fn_err}")
+                        tool_result = {"error": f"Failed to retrieve stock data: {str(fn_err)}"}
 
-                    # Send tool execution result back to Gemini
                     messages.append(
                         types.Content(
                             role="user",
@@ -135,67 +133,12 @@ def chat():
                         )
                     )
 
-            # Generate final answer after supplying tool results
+            # Re-query Gemini with tool outputs
             response = gemini_client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=messages,
                 config=config
             )
-
-        return jsonify({
-            "success": True,
-            "response": response.text,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-
-    except Exception as exc:
-        logger.exception("F11 AI request failed")
-        return jsonify({
-            "success": False,
-            "response": "F11 AI is temporarily unavailable. Please try again.",
-            "error": str(exc) if app.debug else None
-        }), 500
-
-
-
-
-@app.route("/api/chat", methods=["POST", "OPTIONS"])
-def chat():
-    if request.method == "OPTIONS":
-        return "", 204
-
-    if not gemini_client:
-        return jsonify({
-            "success": False,
-            "response": "Gemini API key is not configured on the server."
-        }), 500
-
-    try:
-        payload = request.get_json(silent=True) or {}
-        user_message = (
-            payload.get("message")
-            or payload.get("text")
-            or payload.get("prompt")
-            or payload.get("query")
-            or ""
-        ).strip()
-
-        if not user_message:
-            return jsonify({
-                "success": False,
-                "response": "Please enter a valid question."
-            }), 400
-
-        # Execute Gemini Model Call with Python Function Tool
-        response = gemini_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=user_message,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                tools=[get_stock_info],
-                temperature=0.1
-            )
-        )
 
         return jsonify({
             "success": True,
