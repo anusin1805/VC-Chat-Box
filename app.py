@@ -16,6 +16,9 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 def home():
     return render_template("index.html")
 
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "service": "F11 AI"}),
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("f11-ai")
