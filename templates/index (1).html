@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>F11 AI</title>
+
+<style>
+
+body {
+    margin: 0;
+    background: #f4f6f8;
+    font-family: Arial, sans-serif;
+}
+
+.app {
+    max-width: 900px;
+    margin: auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    background: #111827;
+    color: white;
+    padding: 22px;
+}
+
+.header h1 {
+    margin: 0;
+}
+
+.header p {
+    margin: 5px 0 0;
+    opacity: .7;
+}
+
+.status {
+    padding: 8px 22px;
+    font-size: 13px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+}
+
+.chat {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.message {
+    padding: 14px;
+    margin-bottom: 12px;
+    border-radius: 10px;
+    max-width: 80%;
+    white-space: pre-wrap;
+}
+
+.user {
+    margin-left: auto;
+    background: #dbeafe;
+}
+
+.ai {
+    background: white;
+    border: 1px solid #ddd;
+}
+
+.input {
+    display: flex;
+    padding: 15px;
+    background: white;
+    border-top: 1px solid #ddd;
+}
+
+.input input {
+    flex: 1;
+    padding: 14px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+}
+
+.input button {
+    margin-left: 10px;
+    padding: 14px 24px;
+    border: none;
+    border-radius: 8px;
+    background: #111827;
+    color: white;
+    cursor: pointer;
+}
+
+.input button:disabled {
+    opacity: .5;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+<div class="app">
+
+
+<div class="header">
+
+<h1>F11 AI</h1>
+
+<p>
+Financial Intelligence Assistant
+</p>
+
+</div>
+
+
+<div id="status"
+     class="status">
+
+Connecting to F11 AI...
+
+</div>
+
+
+<div id="chat"
+     class="chat">
+
+<div class="message ai">
+
+Hello! I am F11 AI.
+
+Ask me:
+
+• RELIANCE price
+• TCS P/E
+• INFY 52-week high
+• HDFC Bank market cap
+• Explain P/E ratio
+
+</div>
+
+</div>
+
+
+<div class="input">
+
+<input
+    id="message"
+    placeholder="Ask about a stock..."
+>
+
+<button
+    id="send">
+
+Send
+
+</button>
+
+</div>
+
+
+</div>
+
+
+<script>
+
+const API =
+    "https://vc-chat-box-1.onrender.com";
+
+
+const input =
+    document.getElementById(
+        "message"
+    );
+
+
+const send =
+    document.getElementById(
+        "send"
+    );
+
+      
+      const chat =
+    document.getElementById(
+        "chat"
+    );
+
+
+const status =
+    document.getElementById(
+        "status"
+    );
+
+
+function addMessage(
+    text,
+    type
+) {
+
+    const div =
+        document.createElement(
+            "div"
+        );
+
+    div.className =
+        "message " + type;
+
+    div.textContent =
+        text;
+
+    div.innerHTML = text;
+
+    chat.appendChild(
+        div
+    );
+
+    chat.scrollTop =
+        chat.scrollHeight;
+}
+
+
+async function checkServer() {
+
+    try {
+
+        const response =
+            await fetch(
+                API + "/health"
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Backend unavailable"
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        status.textContent =
+            "● F11 AI online";
+
+
+    } catch (error) {
+
+        status.textContent =
+            "● F11 AI backend unavailable";
+
+        console.error(error);
+
+    }
+
+}
+
+
+async function sendMessage() {
+
+    const message =
+        input.value.trim();
+
+
+    if (!message) {
+
+        return;
+
+    }
+
+
+    addMessage(
+        message,
+        "user"
+    );
+
+
+    input.value = "";
+
+    send.disabled = true;
+
+    send.textContent =
+        "Thinking...";
+
+
+    try {
+
+        const response =
+            await fetch(
+                API + "/api/chat",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            message:
+                                message
+                        })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!response.ok ||
+            !data.success) {
+
+            throw new Error(
+                data.response ||
+                "F11 API error"
+            );
+
+        }
+
+
+        addMessage(
+            data.response,
+            "ai"
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            "F11 ERROR:",
+            error
+        );
+
+
+        addMessage(
+
+            "Unable to connect to F11 AI. " +
+            "Please check the backend.",
+
+            "ai"
+
+        );
+
+    }
+
+
+    send.disabled = false;
+
+    send.textContent =
+        "Send";
+}
+
+
+send.addEventListener(
+    "click",
+    sendMessage
+);
+
+
+input.addEventListener(
+    "keydown",
+    function(e) {
+
+        if (
+            e.key === "Enter"
+        ) {
+
+            sendMessage();
+
+        }
+
+    }
+);
+
+
+checkServer();
+
+</script>
+
+</body>
+
+</html>
