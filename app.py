@@ -13,6 +13,11 @@ from finance_api import get_stock_info
 app = Flask(__name__, template_folder='.')
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+@app.route("/", methods=["GET"])
+def home():
+    return render_template("index.html")
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("f11-ai")
 
