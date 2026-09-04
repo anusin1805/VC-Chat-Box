@@ -241,7 +241,7 @@ def health():
 @app.route("/", methods=["GET"])
 def home():
 
-    return render_template("chat.html")
+    return render_template("index.html")
 
 
 # ---------------------------------------------------------
