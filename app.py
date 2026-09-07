@@ -45,32 +45,27 @@ IMPORTANT FINANCIAL DATA RULES:
 3. If the tool cannot find the stock, state that F11 data source could not identify it.
 4. Do not guarantee investment returns or present advice as certainty.
 """
-
 def safe_get_stock_info(ticker: str) -> str:
-    """Fetch price and metric information for a given stock ticker symbol.
-    
-    Args:
-        ticker: Ticker symbol or company name (e.g., 'RELIANCE', 'SEIL', 'AAPL').
-    """
+    """Fetch stock metrics and return clean plain text for Gemini."""
     if not get_stock_info:
-        return "Stock data module is currently unavailable."
+        return "Stock lookup service currently unavailable."
     
     try:
         symbol = str(ticker).strip().upper()
-        result = get_stock_info(symbol)
+        raw_result = get_stock_info(symbol)
         
-        # Fallback to Indian stock suffixes if initial query returns no data
-        if not result or "Could not find stock data" in str(result):
+        # Fallback check for Indian tickers without suffix
+        if not raw_result or "Could not find" in str(raw_result):
             if not symbol.endswith(('.NS', '.BO')):
-                result = get_stock_info(f"{symbol}.NS")
+                raw_result = get_stock_info(f"{symbol}.NS")
 
-        # Convert to plain text string to prevent SDK serialization crashes
-        clean_text = str(result).replace("<b>", "").replace("</b>", "").replace("<br>", "\n")
-        return clean_text
+        # Convert to plain string and clean HTML elements to prevent SDK crashes
+        clean_response = str(raw_result).replace("<b>", "").replace("</b>", "").replace("<br>", "\n")
+        return clean_response
+    except Exception as err:
+        logger.error(f"Error fetching ticker {ticker}: {err}")
+        return f"Unable to fetch financial data for {ticker}."
 
-    except Exception as e:
-        logger.error(f"Error executing stock lookup for {ticker}: {e}")
-        return f"Unable to fetch data for ticker '{ticker}'."
 
 @app.route("/api/chat", methods=["POST", "OPTIONS"])
 def chat():
