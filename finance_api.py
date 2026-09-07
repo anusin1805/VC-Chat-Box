@@ -23,7 +23,7 @@ def extract_symbol(user_input):
     # Strip conversational prefixes
     cleaned = re.sub(r'^(price\s+of\s+|price\s+|check\s+|show\s+|what\s+is\s+)', '', user_input, flags=re.IGNORECASE).strip()
     # Remove clutter characters
-    cleaned = re.sub(r'[\$"'']', '', cleaned).strip()
+    cleaned = re.sub(r'[\$"\']', '', cleaned).strip()
     return cleaned
 
 def get_stock_info(user_input):
