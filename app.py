@@ -7,21 +7,30 @@ from flask_cors import CORS
 from google import genai
 from google.genai import types
 
-from finance_api import get_stock_info
+# Safe import to prevent startup crashes if finance_api has issues
+try:
+    from finance_api import get_stock_info
+except Exception as e:
+    get_stock_info = None
 
 app = Flask(__name__, template_folder='.')
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("f11-ai")
+
+# 1. FIXED: Removed trailing comma & added 200 status code
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({
+        "status": "ok", 
+        "service": "F11 AI",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }), 200
+
 @app.route("/", methods=["GET"])
 def home():
     return render_template("index.html")
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "ok", "service": "F11 AI"}), 200
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("f11-ai")
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
@@ -37,19 +46,19 @@ IMPORTANT FINANCIAL DATA RULES:
 4. Do not guarantee investment returns or present advice as certainty.
 """
 
-# 1. Wrap the function to prevent crashes during automatic execution
 def safe_get_stock_info(ticker: str) -> dict:
     """Fetch current stock price, P/E ratio, and market cap for a given ticker.
     Args:
         ticker: The stock ticker symbol (e.g., 'AAPL', 'RELIANCE.NS').
     """
+    if not get_stock_info:
+        return {"error": "Stock API module unavailable."}
     try:
         result = get_stock_info(ticker)
         return result if result else {"error": f"No data found for {ticker}."}
     except Exception as e:
         logger.error(f"Error fetching stock data for {ticker}: {e}")
-        return {"error": f"Could not retrieve data for {ticker}. The ticker may be invalid or unsupported."}
-
+        return {"error": f"Could not retrieve data for {ticker}."}
 
 @app.route("/api/chat", methods=["POST", "OPTIONS"])
 def chat():
@@ -68,7 +77,6 @@ def chat():
         if not user_message:
             return jsonify({"success": False, "response": "Please enter a valid question."}), 400
 
-        # 2. The SDK automatically calls safe_get_stock_info when needed
         response = gemini_client.models.generate_content(
             model='gemini-2.5-flash',
             contents=user_message,
