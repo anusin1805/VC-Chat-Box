@@ -18,7 +18,7 @@ def home():
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "service": "F11 AI"}),
+    return jsonify({"status": "ok", "service": "F11 AI"}), 200
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("f11-ai")
