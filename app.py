@@ -46,19 +46,24 @@ IMPORTANT FINANCIAL DATA RULES:
 4. Do not guarantee investment returns or present advice as certainty.
 """
 
-def safe_get_stock_info(ticker: str) -> dict:
-    """Fetch current stock price, P/E ratio, and market cap for a given ticker.
-    Args:
-        ticker: The stock ticker symbol (e.g., 'AAPL', 'RELIANCE.NS').
-    """
+def safe_get_stock_info(ticker: str) -> str:
+    """Fetch current stock price and financial details for a given ticker."""
     if not get_stock_info:
-        return {"error": "Stock API module unavailable."}
+        return "Stock API module unavailable."
     try:
-        result = get_stock_info(ticker)
-        return result if result else {"error": f"No data found for {ticker}."}
+        # If user typed plain SEIL, append .NS fallback
+        symbol = ticker.strip().upper()
+        result = get_stock_info(symbol)
+        
+        if not result or "Could not find stock data" in str(result):
+            if not symbol.endswith(('.NS', '.BO')):
+                result = get_stock_info(f"{symbol}.NS")
+
+        # Convert to plain text string to prevent Gemini SDK serialization crashes
+        return str(result).replace("<b>", "").replace("</b>", "").replace("<br>", "\n")
     except Exception as e:
-        logger.error(f"Error fetching stock data for {ticker}: {e}")
-        return {"error": f"Could not retrieve data for {ticker}."}
+        logger.error(f"Stock lookup error: {e}")
+        return f"Unable to fetch data for {ticker}."
 
 @app.route("/api/chat", methods=["POST", "OPTIONS"])
 def chat():
